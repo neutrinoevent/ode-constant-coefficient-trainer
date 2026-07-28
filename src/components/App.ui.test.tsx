@@ -164,7 +164,9 @@ describe('app shell', () => {
       )
       if (show) {
         click(show)
-        expect(container.querySelectorAll('.derivation-step').length).toBeGreaterThan(4)
+        // Four is the floor the corpus test enforces: a single-group
+        // annihilator derives in exactly four steps.
+        expect(container.querySelectorAll('.derivation-step').length).toBeGreaterThanOrEqual(4)
         return
       }
       const next = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find((b) =>

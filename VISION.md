@@ -206,4 +206,5 @@ Not commitments.
 ## Change log
 
 - **2026-07-27** — V-001 raised and implemented. Initial commit, tagged `v1.0-baseline`, pushed to `neutrinoevent/ode-constant-coefficient-trainer`. Sealed archive at `../ode-constant-coefficient-trainer-ARCHIVE-v1.0-20260727/` (folder copy, git bundle, tarball, checksums, `RESTORE.md`), read-only.
-- **2026-07-27** — V-002 raised and implemented the same day, on the reading that v1 assessed without teaching.
+- **2026-07-27** — V-002 raised and implemented the same day, on the reading that v1 assessed without teaching. Tagged `v2.0-path`.
+- **2026-07-28** — Fixed a flaky UI assertion (`> 4` where the corpus contract is `>= 4` derivation steps; a single-group annihilator derives in exactly four). Wrote `docs/HANDOFF-2026-07-28.md`: state, repository map, the invariants and which test guards each, recipes, rough edges, and the open questions with a recommendation attached to each.
