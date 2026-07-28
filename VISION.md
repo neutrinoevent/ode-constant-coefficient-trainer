@@ -99,6 +99,83 @@ Challenge modes get stable ids in `src/data/challenges.ts` for the same reason. 
 
 ---
 
+---
+
+## V-002 — The app assessed and did not teach (raised 2026-07-27, shipped)
+
+### The ask, as stated
+
+> "As somebody who hasn't even yet internalized the 3 basic cases, per the values of $m_1$, $m_2$ in the characteristic equation, it isn't even easy to diversely come to an internalization of that, in current form. However, I don't want to choke the ceiling of this clearly-powerful framework."
+
+Both halves of that are the entry.
+
+### The diagnosis
+
+v1 has eight modes and seventeen generators, and every one of them **measures**. None teaches. Three specific failures, in order of how much they hurt:
+
+**F1 — It mixes before it blocks.** Classify drew from all three root cases and all nine families from question one. Interleaving does beat blocked practice, but only *after* each category has been learned separately; before that it is not interleaving, it is noise. You cannot learn to discriminate between categories that do not yet exist. This is the direct cause of the complaint.
+
+**F2 — The derivation was computable and thrown away.** Every intermediate is recoverable from the root set the problem was generated from — substitute $y=e^{mx}$, factor out, factor, read the roots, attach a basis function to each. v1 rendered the first and the last and discarded the middle, on every question.
+
+**F3 — Distractors were named mistakes in code and anonymous in the UI.** `complexAsReal`, `lostTheX`, `swapAlphaBeta`, "the rule applied to one term instead of the group" — the code knew exactly which error each wrong option encoded, and the app said "Not that one."
+
+### D8 — One case at a time, then mix
+
+The path (`src/data/path.ts`) is fifteen steps. Steps 3, 4 and 5 are Case I, Case II and Case III **alone**: the generator is pinned to that case and produces nothing else. Step 6 is the first time they appear together, which is where v1 started.
+
+The pinning mechanism is deliberately small. `GeneratorDef.generate` takes an optional `variant`, and `rootgen.secondOrder(rng, kind)` already accepted a case argument, so this is plumbing rather than new mathematics. A generator that does not understand a variant ignores it; `path.test.ts` fails if a step asks for one that is not offered, and separately checks that pinning `general-2-choice` to `repeated` really does produce a factor of $x$ on all forty seeds tested.
+
+Two more narrowings came out of the same idea: `plain` and `resonant` on the trial-form generators, so §4.4's shape-guessing (step 11) is taught before §4.4's multiplication rule (step 12) instead of both arriving at once.
+
+### D9 — Worked examples are computed, never written
+
+`src/lib/derive.ts` turns a root set into ordered `DerivationStep`s, and there are three more entry points for trial forms, annihilators and Cauchy–Euler. A `Problem` carries `derivation?: () => DerivationStep[]` — a thunk, so nothing is built until someone asks.
+
+The consequence worth stating: the worked example is always about the numbers actually on screen, and it **cannot** drift from the answer being graded, because both are computed from the same object. Teach screens in the path use the same renderer on a fixed example. The corpus test checks every derivation over 200 seeds: at least four steps, every step labelled and non-empty, first and last carrying display math.
+
+Writing sixty worked examples by hand would have been the obvious approach and would have rotted the first time a generator changed.
+
+### D10 — A wrong answer costs a mark and buys an explanation
+
+`wrongSolutions` and `wrongTrials` now return `{ tex, why }`, and `why` names the mistake in terms of the numbers in front of you rather than in general:
+
+> This treats $m = -1 \pm 2i$ as two separate real roots $-1$ and $2$. A conjugate pair gives one exponential $e^{-x}$ carrying a cosine and a sine, not two exponentials.
+
+The plumbing is one optional `explanations: (string | null)[]` on the choice answer spec, kept in step with `options` through shuffling and through Classify's option-count trimming. The corpus test asserts the arrays stay the same length and that the *correct* option never carries a rebuttal — which is the failure mode a naive implementation would have.
+
+Near-miss distractors (a root nudged by one) get a generic sentence and are only used to fill when the named mangles do not apply.
+
+### D11 — The path is a view, not a second content system
+
+A step is `{ teach?, practice: PracticeItem[], run: {length, pass}, scope }` where a `PracticeItem` names a generator id (with an optional variant) or a library family id. It owns no questions of its own. Adding a generator makes it reachable from free practice immediately and from a path step by adding one line; removing one fails `path.test.ts` rather than breaking a screen.
+
+One compromise: a path run is multiple choice throughout, so it never switches answer interfaces mid-run. Steps that name a typed generator are silently served its multiple-choice sibling (`choiceFallback`). Typing lives in Solve. This is worth revisiting — see the open questions.
+
+### D12 — Soft gating, chosen deliberately over firm gating
+
+All nine tabs are visible and usable from first launch. The path is the **default view** and the coach line points at the next step, but nothing is locked. The alternative considered was starting with two tabs and unlocking the rest at Familiar.
+
+Soft won because the failure modes are asymmetric. Firm gating annoys the expert immediately and visibly; soft gating merely fails to help the novice who ignores an obvious call to action. And the placement question already distinguishes the two: choosing "revising for an exam" sets `level: 'advanced'`, which skips the path as the landing view entirely and, if chosen at placement time, moves off it.
+
+### What shipped for V-002
+
+- `src/lib/derive.ts` and the `Derivation` / `DerivationToggle` components. "Show me how" on every homogeneous, trial-form, annihilator and Cauchy–Euler problem, in Path, Classify, Solve and Challenge.
+- Labelled distractors across every generator that has them, surfaced as a "What that answer assumed" panel.
+- `variants` on `GeneratorDef`; case pinning on five generators, resonance pinning on three.
+- New generator `roots-only`: read the roots, no solution asked for, which isolates the algebra from the taxonomy for path step 2.
+- `src/data/path.ts` — fifteen steps from "why an exponential" to Cauchy–Euler — and the `Path` component: overview, teach screen, run with a progress bar and a pass mark, result screen.
+- `pathDone` in `ProgressState`, carried by export/import and filtered against the current step list on the way in.
+- `QuestionView`, extracted so Path and Classify render questions through one component rather than drifting apart.
+- Tests: 121 → 127. New `path.test.ts` (pointer integrity, reachable pass marks, real narrowing) plus corpus checks on explanations and derivations, and UI tests for a full teach-drill-clear cycle, a surfaced diagnosis, and an opened derivation.
+
+### Deliberately NOT done
+
+- **No firm gating.** See D12.
+- **No new content system.** Every path step points at material that already existed.
+- **The three-cases explorer** (drag $b$, watch the discriminant flip, the roots move, the curve redraw) was scoped and deferred. It is the highest-variance item on the list: most likely to produce the moment where it clicks, most likely to end up decorative. Better judged once the path is in use and it is clear what the path leaves unexplained.
+
+---
+
 ## Backlog — raised but not scheduled
 
 Not commitments.
@@ -107,6 +184,9 @@ Not commitments.
 - **Boundary-value problems** (§4.1.1) where existence or uniqueness *fails*. The instructive case, and currently absent.
 - **Code-split mathjs.** The bundle is 933 kB (279 kB gzipped), and mathjs is most of it. Only `Solve` needs it. A dynamic import behind that tab would cut the initial load roughly in half.
 - **Timed mode.** Recognition speed is the actual target and nothing currently measures it. A per-question clock feeding a separate "fluency" statistic, distinct from accuracy.
+- **The three-cases explorer.** Deferred from V-002: one figure with $b$ on a slider, showing the discriminant's sign, the roots moving on the complex plane, the solution form, and the solution curve, all at once. `RootPlane` is already half of it.
+- **Typed answers inside a path run.** Currently a run is multiple choice throughout and typed steps are served their choice sibling. Faded worked examples — study, then completion with the last step blank, then solve — would fit here and are the natural next pedagogical move once B exists.
+- **Per-step review.** A cleared step can be re-run but its questions are drawn fresh; there is no way to revisit the specific questions that were missed.
 - **Higher-order Cauchy–Euler.** Currently order two only. Order three brings `(ln x)²` and is a genuinely different exercise.
 - **Systems by elimination** (§4.9) and **nonlinear reductions** (§4.10) — outside "constant-coefficient cases" as scoped, but adjacent, and §4.9 is pure operator algebra.
 - **Superposition drill.** Given `g = g₁ + g₂` with different resonance on each piece, ask for the combined trial form. The generator already produces sums; there is no question type built specifically around splitting them.
@@ -120,7 +200,10 @@ Not commitments.
 1. Should Solve accept complex-exponential form (`c1*e^((−1+2i)x) + c2*e^((−1−2i)x)`) for the complex case? It is a correct fundamental set over ℂ, and the checker's real-valued sampling rejects it. Currently that is deliberate — the section is about producing the *real* form — but it is worth stating in the UI rather than leaving as a silent rejection.
 2. The multiplication rule questions always show `y_c` unless the setting is turned off. Should the harder default be "compute `y_c` yourself" once a topic reaches Proficient, rather than a global toggle?
 3. Damping (§5.1) is in scope because it is the same three cases. Should forced motion and resonance (§5.1.3) follow, or does that pull the app into chapter 5 proper?
+4. A path run is multiple choice throughout, so steps naming a typed generator are served its choice sibling instead (D11). Recognition before production is defensible as a sequence, but the typed check is the better instrument and it is currently absent from the guided route. Mix them within a run, or add a typed second half to each step?
+5. The pass mark is a fixed count per step (5 of 6, 7 of 8). Should it instead be a criterion on the mastery tier, so a step clears when its items reach Familiar rather than when one good run happens?
 
 ## Change log
 
-- **2026-07-27** — V-001 raised and implemented. Initial commit.
+- **2026-07-27** — V-001 raised and implemented. Initial commit, tagged `v1.0-baseline`, pushed to `neutrinoevent/ode-constant-coefficient-trainer`. Sealed archive at `../ode-constant-coefficient-trainer-ARCHIVE-v1.0-20260727/` (folder copy, git bundle, tarball, checksums, `RESTORE.md`), read-only.
+- **2026-07-27** — V-002 raised and implemented the same day, on the reading that v1 assessed without teaching.

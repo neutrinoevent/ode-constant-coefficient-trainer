@@ -19,13 +19,11 @@ import {
   type CaseId,
   type RootSet,
 } from '../lib/roots'
+import { deriveCauchy } from '../lib/derive'
 import type { RNG } from '../lib/rng'
+import { choiceAnswer } from './choice'
+import type { Distractor } from './distractors'
 import type { GeneratorDef, Problem } from './types'
-
-function shuffleWithAnswer(rng: RNG, correct: string, wrong: string[]) {
-  const options = rng.shuffle([correct, ...wrong])
-  return { options, correctIndex: options.indexOf(correct) }
-}
 
 const SMALL = [-3, -2, -1, 1, 2, 3] as const
 
@@ -77,17 +75,23 @@ export const cauchyCase: GeneratorDef = {
     const id = caseOf(eq.roots)
     const label = (k: CaseId) => `${CASE_ZILL[k] ?? ''} — ${CASE_LABEL[k].toLowerCase()}`.trim()
     const correct = label(id)
-    const wrong = (['real-distinct', 'real-repeated', 'complex-distinct'] as CaseId[])
+    const [aa, bb, cc] = eq.auxiliary
+    const disc = bb * bb - 4 * aa * cc
+    const wrong: Distractor[] = (['real-distinct', 'real-repeated', 'complex-distinct'] as CaseId[])
       .filter((k) => k !== id)
-      .map(label)
+      .map((k) => ({
+        tex: label(k),
+        why: `The auxiliary equation is $${aa}m^2 ${bb < 0 ? '-' : '+'} ${Math.abs(bb)}m ${cc < 0 ? '-' : '+'} ${Math.abs(cc)} = 0$, with discriminant ${disc}. Expanding $m(m-1)$ is the step that is easy to skip: the linear coefficient is $b - a = ${bb}$, not $b = ${eq.b}$.`,
+      }))
     return {
       generatorId: 'cauchy-case',
       topicId: 'cauchy',
       question: 'Which case do the roots of the auxiliary equation fall into?',
       statementTex: cauchyTex(eq),
-      answer: { kind: 'choice', ...shuffleWithAnswer(rng, correct, wrong) },
+      answer: choiceAnswer(rng, correct, wrong),
       hint: `Substituting $y = x^{m}$ gives $${cauchyAuxiliaryTex(eq)}$.`,
-      solution: `$${cauchyAuxiliaryTex(eq)}$, that is $${eq.auxiliary[0]}m^2 ${eq.auxiliary[1] < 0 ? '-' : '+'} ${Math.abs(eq.auxiliary[1])}m ${eq.auxiliary[2] < 0 ? '-' : '+'} ${Math.abs(eq.auxiliary[2])} = 0$, so $${rootsTex(eq.roots)}$.`,
+      solution: `$${cauchyAuxiliaryTex(eq)}$, that is $${aa}m^2 ${bb < 0 ? '-' : '+'} ${Math.abs(bb)}m ${cc < 0 ? '-' : '+'} ${Math.abs(cc)} = 0$, so $${rootsTex(eq.roots)}$.`,
+      derivation: () => deriveCauchy(eq),
     }
   },
 }
@@ -118,8 +122,17 @@ export const cauchyEntry: GeneratorDef = {
       hint: `Substitute $y = x^{m}$: $${cauchyAuxiliaryTex(eq)}$.`,
       solution: `$${rootsTex(eq.roots)}$, so $y = ${cauchySolutionTex(eq.roots)}$.`,
       note: 'Type `ln(x)` for the logarithm. The answer is checked on $x > 0$, where the equation is nonsingular.',
+      derivation: () => deriveCauchy(eq),
     }
   },
+}
+
+/** What each regime would have required, for the wrong-answer explanation. */
+const DAMPING_HINT = {
+  over: 'Overdamped needs a positive discriminant.',
+  critical: 'Critically damped needs it to be exactly zero.',
+  under: 'Underdamped needs it to be negative.',
+  none: 'Undamped needs $\\beta = 0$.',
 }
 
 const DAMPING_LABELS = {
@@ -163,9 +176,12 @@ export const dampingRegime: GeneratorDef = {
     const disc = beta * beta - 4 * m * k
     const actual = beta === 0 ? 'none' : disc > 0 ? 'over' : disc === 0 ? 'critical' : 'under'
     const correct = DAMPING_LABELS[actual]
-    const wrong = (Object.keys(DAMPING_LABELS) as (keyof typeof DAMPING_LABELS)[])
+    const wrong: Distractor[] = (Object.keys(DAMPING_LABELS) as (keyof typeof DAMPING_LABELS)[])
       .filter((key) => key !== actual)
-      .map((key) => DAMPING_LABELS[key])
+      .map((key) => ({
+        tex: DAMPING_LABELS[key],
+        why: `$\\beta^2 - 4mk = ${beta}^2 - 4(${m})(${k}) = ${disc}$, which is ${disc > 0 ? 'positive' : disc === 0 ? 'zero' : 'negative'}. ${DAMPING_HINT[key]}`,
+      }))
 
     const eq = `${m === 1 ? '' : m}\\frac{d^2x}{dt^2} ${beta === 0 ? '' : `+ ${beta === 1 ? '' : beta}\\frac{dx}{dt} `}+ ${k === 1 ? '' : k}x = 0`
     return {
@@ -173,7 +189,7 @@ export const dampingRegime: GeneratorDef = {
       topicId: 'damping',
       question: 'Which regime is this system in?',
       statementTex: eq,
-      answer: { kind: 'choice', ...shuffleWithAnswer(rng, correct, wrong) },
+      answer: choiceAnswer(rng, correct, wrong),
       hint: 'Look at $\\beta^2 - 4mk$.',
       solution: `$\\beta^2 - 4mk = ${beta}^2 - 4(${m})(${k}) = ${disc}$. ${correct}.`,
     }

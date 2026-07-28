@@ -1,11 +1,18 @@
 import type { RNG } from '../lib/rng'
 import type { Quasi, QTerm } from '../lib/quasipoly'
+import type { DerivationStep } from '../lib/derive'
 
 /** How the answer is given: pick one, or type it. */
 export type Mode = 'choice' | 'entry'
 
 export type AnswerSpec =
-  | { kind: 'choice'; options: string[]; correctIndex: number }
+  | {
+      kind: 'choice'
+      options: string[]
+      correctIndex: number
+      /** Per-option: the mistake it encodes, shown when it is picked. */
+      explanations?: (string | null)[]
+    }
   | {
       kind: 'span'
       /** Fundamental set the answer must span, as terms or as raw functions. */
@@ -44,6 +51,11 @@ export interface Problem {
   /** One line of teaching shown after the answer lands. */
   note?: string
   /**
+   * The full worked derivation for this exact problem, computed on demand.
+   * A thunk so the steps are only built when someone asks to see them.
+   */
+  derivation?: () => DerivationStep[]
+  /**
    * The homogeneous operator behind the problem, descending coefficients.
    * Present whenever there is one; the corpus test applies it to the stated
    * fundamental set and checks the result is exactly zero.
@@ -58,5 +70,10 @@ export interface GeneratorDef {
   section: string
   topicId: string
   mode: Mode
-  generate: (rng: RNG) => Problem
+  /**
+   * Named narrowings this generator understands, so a path step can pin it to
+   * one root case. Ignored, and safely omitted, by generators without any.
+   */
+  variants?: readonly string[]
+  generate: (rng: RNG, variant?: string) => Problem
 }

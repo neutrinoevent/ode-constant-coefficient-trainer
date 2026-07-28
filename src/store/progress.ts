@@ -8,6 +8,7 @@
 
 import { ALL_CASES, CASE_BY_ID } from '../data/cases'
 import { CHALLENGE_BY_ID } from '../data/challenges'
+import { PATH_BY_ID } from '../data/path'
 import { GENERATOR_BY_ID } from '../generators'
 
 export interface ItemStats {
@@ -36,6 +37,8 @@ export interface ProgressState {
   /** New-card introductions today, to pace the flashcard queue. */
   newDay: string
   newToday: number
+  /** Path steps cleared, in the order they were cleared. */
+  pathDone: string[]
 }
 
 export type Grade = 'again' | 'good' | 'easy'
@@ -78,6 +81,7 @@ export function emptyProgress(): ProgressState {
     bestStreak: 0,
     newDay: dayKey(Date.now()),
     newToday: 0,
+    pathDone: [],
   }
 }
 
@@ -87,7 +91,7 @@ export function loadProgress(): ProgressState {
     if (!raw) return emptyProgress()
     const parsed = JSON.parse(raw) as ProgressState
     if (parsed.version !== 1 || typeof parsed.totalAttempts !== 'number') return emptyProgress()
-    return parsed
+    return { ...emptyProgress(), ...parsed, pathDone: parsed.pathDone ?? [] }
   } catch {
     return emptyProgress()
   }
@@ -216,6 +220,21 @@ export function dueCount(state: ProgressState): number {
   return n
 }
 
+/** Record a cleared path step. Clearing one twice is a no-op. */
+export function markStepDone(state: ProgressState, stepId: string): ProgressState {
+  if (state.pathDone.includes(stepId)) return state
+  const next: ProgressState = { ...state, pathDone: [...state.pathDone, stepId] }
+  saveProgress(next)
+  return next
+}
+
+/** Reopen a cleared step, so it can be run again from the overview. */
+export function unmarkStepDone(state: ProgressState, stepId: string): ProgressState {
+  const next: ProgressState = { ...state, pathDone: state.pathDone.filter((s) => s !== stepId) }
+  saveProgress(next)
+  return next
+}
+
 export function resetProgress(): ProgressState {
   const next = emptyProgress()
   saveProgress(next)
@@ -236,7 +255,16 @@ export function importProgress(json: string): ProgressState | null {
       const known = CASE_BY_ID.has(id) || GENERATOR_BY_ID.has(id) || CHALLENGE_BY_ID.has(id)
       if (known && typeof s.attempts === 'number') byId[id] = { ...emptyStats(), ...s }
     }
-    const next: ProgressState = { ...emptyProgress(), ...parsed, byId, version: 1 }
+    const next: ProgressState = {
+      ...emptyProgress(),
+      ...parsed,
+      byId,
+      // Backups written before the path existed have no such field.
+      pathDone: (Array.isArray(parsed.pathDone) ? parsed.pathDone : []).filter(
+        (id): id is string => typeof id === 'string' && PATH_BY_ID.has(id),
+      ),
+      version: 1,
+    }
     saveProgress(next)
     return next
   } catch {

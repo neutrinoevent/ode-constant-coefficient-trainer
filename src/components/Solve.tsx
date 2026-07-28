@@ -9,6 +9,7 @@ import { operatorTex } from '../lib/operator'
 import { masteryMap, statsFor, type ProgressState } from '../store/progress'
 import type { Settings } from '../store/settings'
 import { Rich, Tex } from './Tex'
+import { DerivationToggle } from './Derivation'
 import { ScopePicker } from './ScopePicker'
 
 interface SolveProps {
@@ -229,6 +230,7 @@ export function Solve({ progress, settings, scope, onScope, onAnswer }: SolvePro
           <button className="btn" onClick={advance}>
             {solved ? 'Next problem' : 'Skip'}
           </button>
+          {problem.derivation ? <DerivationToggle steps={problem.derivation()} /> : null}
         </div>
 
         {hintShown ? (

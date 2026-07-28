@@ -4,16 +4,19 @@ import { Cards } from './components/Cards'
 import { Challenge } from './components/Challenge'
 import { Classify } from './components/Classify'
 import { Learn } from './components/Learn'
+import { Path } from './components/Path'
 import { Placement } from './components/Placement'
 import { ProgressView } from './components/ProgressView'
 import { SettingsView } from './components/SettingsView'
 import { Solve } from './components/Solve'
 import { Tour, TOUR_KEY } from './components/Tour'
 import { suggest } from './lib/coach'
+import { nextStep, PATH } from './data/path'
 import {
   dueCount,
   importProgress,
   loadProgress,
+  markStepDone,
   recordAttempt,
   recordGrade,
   resetProgress,
@@ -22,7 +25,16 @@ import {
 } from './store/progress'
 import { loadSettings, saveSettings, type Settings } from './store/settings'
 
-type View = 'learn' | 'classify' | 'solve' | 'challenge' | 'cards' | 'progress' | 'about' | 'settings'
+type View =
+  | 'path'
+  | 'learn'
+  | 'classify'
+  | 'solve'
+  | 'challenge'
+  | 'cards'
+  | 'progress'
+  | 'about'
+  | 'settings'
 type Theme = 'light' | 'dark' | null
 
 const THEME_KEY = 'ode-trainer-theme'
@@ -45,6 +57,7 @@ function tourPending(): boolean {
 }
 
 const VIEWS: { id: View; label: string }[] = [
+  { id: 'path', label: 'Path' },
   { id: 'learn', label: 'Learn' },
   { id: 'classify', label: 'Classify' },
   { id: 'solve', label: 'Solve' },
@@ -55,9 +68,14 @@ const VIEWS: { id: View; label: string }[] = [
 ]
 
 export default function App() {
-  const [view, setView] = useState<View>('learn')
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
+  // The path leads unless it is finished, or the placement said "revising".
+  const [view, setView] = useState<View>(() =>
+    loadSettings().level === 'advanced' || nextStep(loadProgress().pathDone) === null
+      ? 'learn'
+      : 'path',
+  )
   const [theme, setTheme] = useState<Theme>(() => initTheme())
   const [scope, setScope] = useState<string[] | null>(() => loadSettings().scope)
   const [showTour, setShowTour] = useState<boolean>(() => tourPending())
@@ -88,6 +106,8 @@ export default function App() {
     setSettings(next)
     saveSettings(next)
     if (next.scope !== settings.scope) setScope(next.scope)
+    // Someone revising for an exam does not want to be walked through it.
+    if (next.level === 'advanced' && view === 'path') setView('classify')
   }
 
   const updateScope = (next: string[] | null) => {
@@ -100,6 +120,7 @@ export default function App() {
   const onAnswer = (id: string, correct: boolean) =>
     setProgress((p) => recordAttempt(p, id, correct))
   const onGrade = (id: string, grade: Grade) => setProgress((p) => recordGrade(p, id, grade))
+  const onStepDone = (stepId: string) => setProgress((p) => markStepDone(p, stepId))
   const onImport = (json: string): boolean => {
     const next = importProgress(json)
     if (next) setProgress(next)
@@ -107,7 +128,16 @@ export default function App() {
   }
 
   const due = dueCount(progress)
-  const coach = suggest(progress)
+  const pending = nextStep(progress.pathDone)
+  const coach =
+    pending && settings.level !== 'advanced' && due === 0
+      ? {
+          text: `Next on the path: step ${PATH.indexOf(pending) + 1}, ${pending.title}.`,
+          go: 'path' as const,
+          goLabel: 'Continue',
+          scope: undefined,
+        }
+      : suggest(progress)
   const showCoach =
     !coachDismissed &&
     !showTour &&
@@ -183,6 +213,18 @@ export default function App() {
       ) : null}
 
       <main className="main">
+        {view === 'path' ? (
+          <Path
+            progress={progress}
+            settings={settings}
+            onAnswer={onAnswer}
+            onStepDone={onStepDone}
+            onPractice={(next) => {
+              updateScope(next)
+              setView('classify')
+            }}
+          />
+        ) : null}
         {view === 'learn' ? (
           <Learn
             progress={progress}
@@ -238,9 +280,9 @@ export default function App() {
 
       {showTour ? (
         <Tour
-          onDone={(goLearn) => {
+          onDone={(goStart) => {
             setShowTour(false)
-            if (goLearn) setView('learn')
+            if (goStart) setView(settings.level === 'advanced' ? 'classify' : 'path')
           }}
         />
       ) : null}

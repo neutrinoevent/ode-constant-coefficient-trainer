@@ -6,7 +6,7 @@ import { TIER_LABEL, tierFor } from '../lib/mastery'
 import { buildQuestion, pickCase, scopedCases, shuffle } from '../lib/pick'
 import { masteryMap, statsFor, type ProgressState } from '../store/progress'
 import type { Settings } from '../store/settings'
-import { Rich, Tex } from './Tex'
+import { QuestionView, type Ask } from './QuestionView'
 import { ScopePicker } from './ScopePicker'
 
 type Source = 'mixed' | 'facts' | 'problems'
@@ -17,21 +17,8 @@ const SOURCES: { id: Source; label: string; blurb: string }[] = [
   { id: 'problems', label: 'Equations', blurb: 'Freshly generated equations every time.' },
 ]
 
-interface Drill {
-  /** Progress key: a case id or a generator id. */
-  id: string
-  badge: string
-  section: string
-  question: string
-  statementTex?: string
-  givenTex?: string
-  givenLabel?: string
-  options: string[]
-  correctIndex: number
-  hint?: string
-  solution?: string
-  note?: string
-}
+/** A Classify question is an Ask; the tier badge is filled in at render time. */
+type Drill = Ask
 
 interface ClassifyProps {
   progress: ProgressState
@@ -81,6 +68,7 @@ export function Classify({ progress, settings, scope, onScope, onAnswer }: Class
           question: item.prompt,
           options: q.options,
           correctIndex: q.correctIndex,
+          explanations: q.options.map(() => null),
           note: item.note,
         }
       }
@@ -88,7 +76,12 @@ export function Classify({ progress, settings, scope, onScope, onAnswer }: Class
       if (p.answer.kind !== 'choice') throw new Error('expected a choice problem')
       const stats = statsFor(state, p.generatorId)
       const count = resolveOptionCount(opts, tierFor(stats), recentWindow)
-      const { options, correctIndex } = trimOptions(p.answer.options, p.answer.correctIndex, count)
+      const trimmed = trimOptions(
+        p.answer.options,
+        p.answer.correctIndex,
+        p.answer.explanations ?? p.answer.options.map(() => null),
+        count,
+      )
       return {
         id: p.generatorId,
         badge: FAMILY_BY_ID.get(p.topicId)?.name ?? p.topicId,
@@ -97,11 +90,11 @@ export function Classify({ progress, settings, scope, onScope, onAnswer }: Class
         statementTex: p.statementTex,
         givenTex: opts.showComplementary ? p.givenTex : undefined,
         givenLabel: p.givenLabel,
-        options,
-        correctIndex,
+        ...trimmed,
         hint: p.hint,
         solution: p.solution,
         note: p.note,
+        derivation: p.derivation,
       }
     },
     [scope],
@@ -151,9 +144,6 @@ export function Classify({ progress, settings, scope, onScope, onAnswer }: Class
 
   if (!drill) return null
 
-  const wasCorrect = picked !== null && picked === drill.correctIndex
-  const wide = drill.options.every((o) => o.length < 46)
-
   return (
     <section>
       <ScopePicker scope={scope} onScope={onScope} />
@@ -172,107 +162,56 @@ export function Classify({ progress, settings, scope, onScope, onAnswer }: Class
         <span className="meta-note">{blurb}</span>
       </div>
 
-      <div className="card problem-card">
-        <div className="problem-meta">
-          <span className="badge">{drill.badge}</span>
-          {drill.section ? <span className="badge badge-section">{drill.section}</span> : null}
-          <span className="meta-note">{TIER_LABEL[tier]}</span>
-        </div>
-
-        <p className="question-line">
-          <Rich text={drill.question} />
-        </p>
-
-        {drill.statementTex ? (
-          <div className="problem-tex">
-            <Tex tex={drill.statementTex} block />
-          </div>
-        ) : null}
-
-        {drill.givenTex ? (
-          <div className="given-row">
-            <span className="given-label">{drill.givenLabel ?? 'Given'}</span>
-            <Tex tex={drill.givenTex} />
-          </div>
-        ) : null}
-
-        <div className="divider" />
-
-        <div className={wide ? 'options options-wide' : 'options'}>
-          {drill.options.map((opt, i) => {
-            const isCorrect = i === drill.correctIndex
-            const cls = [
-              'option',
-              picked !== null && isCorrect ? 'option-correct' : '',
-              picked === i && !isCorrect ? 'option-wrong' : '',
-              picked !== null && !isCorrect && picked !== i ? 'option-dim' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')
-            return (
-              <button key={i} className={cls} disabled={picked !== null} onClick={() => answer(i)}>
-                <span className="option-key">{i + 1}</span>
-                <span className="option-body">
-                  <Rich text={opt} />
-                </span>
+      <QuestionView
+        ask={{ ...drill, meta: TIER_LABEL[tier] }}
+        picked={picked}
+        onPick={answer}
+        hintShown={hintShown}
+        actions={
+          <div className="actions">
+            {drill.hint ? (
+              <button
+                className="btn"
+                onClick={() => setHintShown(true)}
+                disabled={hintShown || picked !== null}
+              >
+                Hint
               </button>
-            )
-          })}
-        </div>
-
-        {picked !== null ? (
-          <div className={wasCorrect ? 'feedback feedback-good' : 'feedback feedback-bad'} role="status">
-            <span className="feedback-tier">{TIER_LABEL[tierFor(statsFor(progress, drill.id))]}</span>
-            {wasCorrect ? 'Correct' : 'Not that one'}
-          </div>
-        ) : null}
-
-        <div className="actions">
-          {drill.hint ? (
-            <button className="btn" onClick={() => setHintShown(true)} disabled={hintShown || picked !== null}>
-              Hint
+            ) : null}
+            <button className="btn btn-primary" onClick={advance} disabled={picked === null}>
+              Next →
             </button>
-          ) : null}
-          <button className="btn btn-primary" onClick={advance} disabled={picked === null}>
-            Next →
-          </button>
-          <button className="btn" onClick={advance} disabled={picked !== null}>
-            Skip
-          </button>
-          <span className="meta-note">Keys 1–{drill.options.length} answer, Enter advances.</span>
-        </div>
-
-        {hintShown && drill.hint ? (
-          <div className="hint">
-            <Rich text={drill.hint} />
+            <button className="btn" onClick={advance} disabled={picked !== null}>
+              Skip
+            </button>
+            <span className="meta-note">Keys 1–{drill.options.length} answer, Enter advances.</span>
           </div>
-        ) : null}
-
-        {picked !== null && (drill.solution || drill.note) ? (
-          <div className="solution">
-            {drill.solution ? (
-              <>
-                <span className="solution-label">Working</span>
-                <Rich text={drill.solution} />
-              </>
-            ) : null}
-            {drill.note ? (
-              <div className="note-line">
-                <Rich text={drill.note} />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+        }
+      />
     </section>
   )
 }
 
-/** Keep the correct option and a random selection of the wrong ones. */
-function trimOptions(options: string[], correctIndex: number, count: number) {
-  if (options.length <= count) return { options, correctIndex }
-  const correct = options[correctIndex]
-  const wrong = shuffle(options.filter((_, i) => i !== correctIndex)).slice(0, count - 1)
-  const next = shuffle([correct, ...wrong])
-  return { options: next, correctIndex: next.indexOf(correct) }
+/**
+ * Keep the correct option and a random selection of the wrong ones, carrying
+ * each option's explanation with it.
+ */
+function trimOptions(
+  options: string[],
+  correctIndex: number,
+  explanations: (string | null)[],
+  count: number,
+) {
+  const paired = options.map((text, i) => ({ text, why: explanations[i] ?? null }))
+  const correct = paired[correctIndex]
+  const kept =
+    options.length <= count
+      ? paired
+      : [correct, ...shuffle(paired.filter((_, i) => i !== correctIndex)).slice(0, count - 1)]
+  const next = options.length <= count ? kept : shuffle(kept)
+  return {
+    options: next.map((o) => o.text),
+    correctIndex: next.indexOf(correct),
+    explanations: next.map((o) => o.why),
+  }
 }

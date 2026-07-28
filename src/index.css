@@ -489,6 +489,232 @@ code {
   color: var(--ink-2);
 }
 
+/* ---- the path ---- */
+
+.path-header {
+  margin-bottom: 16px;
+}
+
+.path-header .actions {
+  margin-top: 12px;
+}
+
+.path-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.path-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.path-item:hover {
+  border-color: var(--muted);
+  border-left-color: var(--accent);
+}
+
+.path-item-current {
+  border-left-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.path-item-done {
+  border-left-color: var(--good);
+}
+
+.path-item-done .path-num {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.path-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+  border-radius: 99px;
+}
+
+.path-item-current .path-num {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.path-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.path-title {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.path-goal {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.path-step-head {
+  margin-bottom: 14px;
+}
+
+.path-goal-line {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.teach-para {
+  margin: 0 0 12px;
+  color: var(--ink-2);
+  line-height: 1.62;
+}
+
+.teach-para:last-of-type {
+  margin-bottom: 0;
+}
+
+.run-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.run-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.run-track {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.run-pip {
+  flex: 1;
+  max-width: 34px;
+  height: 4px;
+  background: var(--meter-track);
+}
+
+.run-pip-filled {
+  background: var(--accent);
+}
+
+/* ---- worked derivations ---- */
+
+.derivation-wrap {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px 16px 10px;
+}
+
+.derivation {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+}
+
+.derivation-step {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.derivation-step:first-child {
+  border-top: none;
+}
+
+.derivation-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding-top: 3px;
+}
+
+.derivation-label::before {
+  content: counter(step) '. ';
+  color: var(--accent);
+}
+
+.derivation-body {
+  min-width: 0;
+}
+
+.derivation-tex {
+  font-size: 17px;
+  overflow-x: auto;
+  padding: 2px 0;
+}
+
+.derivation-text {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+
+/* ---- diagnosis of a wrong choice ---- */
+
+.diagnosis {
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bad);
+  background: var(--surface);
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.diagnosis-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bad);
+  display: block;
+  margin-bottom: 3px;
+}
+
 /* ---- typed answers ---- */
 
 .answer-label {

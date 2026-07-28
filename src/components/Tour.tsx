@@ -16,14 +16,19 @@ const STEPS: Step[] = [
     body: 'Chapter 4 is three cases and one rule about when to multiply by a power of x. Everything here aims at recognizing which case you are in, fast.',
   },
   {
+    target: 'path',
+    title: 'Path',
+    body: 'The route through the chapter, one idea at a time. Each step explains a single thing, shows it worked through on real numbers, then drills that thing alone before the next arrives. Start here if the three cases are not yet automatic.',
+  },
+  {
     target: 'learn',
     title: 'Learn',
-    body: 'The stated results, by section, with the specific mistake each one invites. Read one topic, then drill it.',
+    body: 'The stated results, by section, with the specific mistake each one invites. A reference rather than a route — use it to look something up.',
   },
   {
     target: 'classify',
     title: 'Classify',
-    body: 'Multiple choice, mixing stated results with freshly generated equations. Keys 1 to 4 answer, Enter advances. The wrong options are the mistakes people actually make.',
+    body: 'Multiple choice over everything at once, with no ordering. Keys 1 to 4 answer, Enter advances. Every wrong option is a specific mistake, and picking one tells you which.',
   },
   {
     target: 'solve',
@@ -47,7 +52,7 @@ const STEPS: Step[] = [
   },
 ]
 
-export function Tour({ onDone }: { onDone: (goLearn: boolean) => void }) {
+export function Tour({ onDone }: { onDone: (goStart: boolean) => void }) {
   const [i, setI] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const step = STEPS[i]
@@ -71,13 +76,13 @@ export function Tour({ onDone }: { onDone: (goLearn: boolean) => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onDone])
 
-  const finish = (goLearn: boolean) => {
+  const finish = (goStart: boolean) => {
     try {
       localStorage.setItem(TOUR_KEY, '1')
     } catch {
       // storage unavailable — the tour will simply offer itself again
     }
-    onDone(goLearn)
+    onDone(goStart)
   }
 
   const pad = 6

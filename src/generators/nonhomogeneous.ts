@@ -13,30 +13,39 @@ import {
   trialTerms,
   trialTex,
 } from '../lib/undetermined'
+import { deriveAnnihilator, deriveTrial } from '../lib/derive'
+import { choiceAnswer } from './choice'
+import type { Distractor } from './distractors'
 import { makeForcing } from './forcing'
 import { higherOrder, secondOrder } from './rootgen'
 import type { GeneratorDef, Problem } from './types'
 
-function shuffleWithAnswer(rng: RNG, correct: string, wrong: string[]) {
-  const options = rng.shuffle([correct, ...wrong])
-  return { options, correctIndex: options.indexOf(correct) }
-}
+/**
+ * Roots plus a forcing function. `variant` lets a path step ask for a forcing
+ * function that definitely does (or definitely does not) duplicate y_c, so the
+ * multiplication rule can be introduced separately from the trial form itself.
+ */
+const RESONANCE = ['plain', 'resonant'] as const
 
-/** Same, for options that are expressions rather than prose. */
-function mathChoice(rng: RNG, correct: string, wrong: string[]) {
-  const order = rng.shuffle([correct, ...wrong])
-  return { options: order.map((t) => `$${t}$`), correctIndex: order.indexOf(correct) }
-}
-
-/** Roots plus a forcing function, resonant most of the time. */
-function setup(rng: RNG, resonantBias = 0.6) {
+function setup(rng: RNG, variant?: string, resonantBias = 0.6) {
   const roots = rng.bool(0.75) ? secondOrder(rng) : higherOrder(rng)
-  const { q } = makeForcing(rng, roots, undefined, rng.bool(resonantBias))
-  return { roots, g: q }
+  const resonant =
+    variant === 'resonant' ? true : variant === 'plain' ? false : rng.bool(resonantBias)
+  let g = makeForcing(rng, roots, undefined, resonant).q
+  if (variant) {
+    // Confirm the choice actually landed; resample a few times if it did not.
+    let guard = 0
+    while (guard++ < 25) {
+      const shifted = forcingGroups(g).some((grp) => multiplicationShift(grp, roots) > 0)
+      if (shifted === (variant === 'resonant')) break
+      g = makeForcing(rng, roots, undefined, resonant).q
+    }
+  }
+  return { roots, g }
 }
 
-/** Trial forms built on a deliberately wrong reading of the rule. */
-function wrongTrials(g: QTerm[], roots: RootSet, correct: QTerm[], rng: RNG): string[] {
+/** Trial forms built on a deliberately wrong reading of the rule, each named. */
+function wrongTrials(g: QTerm[], roots: RootSet, correct: QTerm[], rng: RNG): Distractor[] {
   const groups = forcingGroups(g)
   const shifted = groups.map((grp) => multiplicationShift(grp, roots))
 
@@ -55,35 +64,73 @@ function wrongTrials(g: QTerm[], roots: RootSet, correct: QTerm[], rng: RNG): st
     return out
   }
 
-  const candidates: QTerm[][] = [
-    build(shifted.map(() => 0)), // the rule ignored
-    build(shifted.map((s) => s + 1)), // one x too many
-    build(shifted.map((s) => Math.max(0, s - 1))), // one x too few
-    build(shifted.map((s, i) => (i === 0 ? s + 1 : s))), // the rule over-applied to one group
-    build(shifted.map((s) => s + 2)),
+  const anyShift = shifted.some((s) => s > 0)
+  const maxShift = Math.max(0, ...shifted)
+
+  const candidates: { terms: QTerm[]; why: string }[] = [
+    {
+      terms: build(shifted.map(() => 0)),
+      why: anyShift
+        ? `The multiplication rule was skipped. A term built on a root of the auxiliary equation already solves the homogeneous equation, so substituting this back gives zero and no coefficients can be found. Multiply that group by $x^{${maxShift}}$.`
+        : 'The powers of $x$ here do not match the degree of $g(x)$.',
+    },
+    {
+      terms: build(shifted.map((s) => s + 1)),
+      why: 'One power of $x$ too many. $s$ is exactly the multiplicity of the root — no more. An oversized trial form still works algebraically, but the extra coefficients all come out zero.',
+    },
+    {
+      terms: build(shifted.map((s) => Math.max(0, s - 1))),
+      why: 'One power of $x$ too few, so part of this still duplicates $y_c$.',
+    },
+    {
+      terms: build(shifted.map((s, i) => (i === 0 ? s + 1 : s))),
+      why: 'The $x$-multiplier was applied unevenly. Each group of $g(x)$ gets the multiplicity of its own root, decided separately.',
+    },
+    {
+      terms: build(shifted.map((s) => s + 2)),
+      why: `Two powers of $x$ too many. $s$ is the multiplicity of the root and nothing else — here ${anyShift ? `$s = ${maxShift}$` : '$s = 0$'}.`,
+    },
+    {
+      terms: [
+        ...correct,
+        term(
+          1,
+          (correct.at(-1)?.k ?? 0) + 1,
+          correct.at(-1)?.a ?? 0,
+          correct.at(-1)?.b ?? 0,
+          'cos',
+        ),
+      ],
+      why: 'One term too many at the top end. The degree of the trial polynomial matches the degree in $g(x)$; going higher only adds coefficients that solve to zero.',
+    },
   ]
 
   // Cosine kept, sine partner dropped — the trig case done by half.
   const halfTrig = correct.filter((t) => t.b === 0 || t.trig === 'cos')
-  if (halfTrig.length !== correct.length) candidates.push(halfTrig)
+  if (halfTrig.length !== correct.length) {
+    candidates.push({
+      terms: halfTrig,
+      why: 'The sine partner is missing. Differentiating a cosine produces a sine, so both have to be in the trial form even when only one appears in $g(x)$.',
+    })
+  }
 
   // Lowest-degree term dropped, the "only the leading power" answer.
-  if (correct.length > 1) candidates.push(correct.slice(0, -1))
-  // One extra term of the next power up.
-  candidates.push([
-    ...correct,
-    term(1, (correct.at(-1)?.k ?? 0) + 1, correct.at(-1)?.a ?? 0, correct.at(-1)?.b ?? 0, 'cos'),
-  ])
+  if (correct.length > 1) {
+    candidates.push({
+      terms: correct.slice(0, -1),
+      why: 'A term is missing. The trial form needs every power of $x$ from the top degree down to zero, because differentiating the leading term produces all of them.',
+    })
+  }
 
   const correctTex = termsTrialTex(correct)
   const seen = new Set([correctTex])
-  const out: string[] = []
+  const out: Distractor[] = []
   for (const cand of rng.shuffle(candidates)) {
-    if (!cand.length) continue
-    const tex = termsTrialTex(cand)
+    if (!cand.terms.length) continue
+    const tex = termsTrialTex(cand.terms)
     if (seen.has(tex)) continue
     seen.add(tex)
-    out.push(tex)
+    out.push({ tex, why: cand.why })
     if (out.length >= 3) break
   }
   return out
@@ -97,8 +144,9 @@ export const trialEntry: GeneratorDef = {
   section: '§4.4',
   topicId: 'trial',
   mode: 'entry',
-  generate: (rng: RNG): Problem => {
-    const { roots, g } = setup(rng)
+  variants: RESONANCE,
+  generate: (rng: RNG, variant?: string): Problem => {
+    const { roots, g } = setup(rng, variant)
     const target = trialTerms(g, roots)
     const coeffs = charPoly(roots)
     return {
@@ -120,6 +168,7 @@ export const trialEntry: GeneratorDef = {
       hint: 'Group $g(x)$ by its exponential rate and frequency, give each group a full polynomial, then apply the $x^{s}$ rule.',
       solution: `$y_p = ${trialTex(g, roots)}$`,
       note: shiftExplanation(g, roots),
+      derivation: () => deriveTrial(g, roots),
     }
   },
 }
@@ -132,8 +181,9 @@ export const trialChoice: GeneratorDef = {
   section: '§4.4',
   topicId: 'trial',
   mode: 'choice',
-  generate: (rng: RNG): Problem => {
-    const { roots, g } = setup(rng)
+  variants: RESONANCE,
+  generate: (rng: RNG, variant?: string): Problem => {
+    const { roots, g } = setup(rng, variant)
     const target = trialTerms(g, roots)
     const correct = termsTrialTex(target)
     return {
@@ -143,13 +193,11 @@ export const trialChoice: GeneratorDef = {
       statementTex: odeTex(charPoly(roots), quasiTex(g)),
       givenLabel: 'Complementary function',
       givenTex: `y_c = ${generalSolutionTex(roots)}`,
-      answer: {
-        kind: 'choice',
-        ...mathChoice(rng, correct, wrongTrials(g, roots, target, rng)),
-      },
+      answer: choiceAnswer(rng, correct, wrongTrials(g, roots, target, rng), { math: true }),
       hint: 'Check each group of $g(x)$ against $y_c$ before writing anything down.',
       solution: `$y_p = ${trialTex(g, roots)}$`,
       note: shiftExplanation(g, roots),
+      derivation: () => deriveTrial(g, roots),
     }
   },
 }
@@ -162,14 +210,20 @@ export const shiftChoice: GeneratorDef = {
   section: '§4.4',
   topicId: 'trial',
   mode: 'choice',
-  generate: (rng: RNG): Problem => {
+  variants: RESONANCE,
+  generate: (rng: RNG, variant?: string): Problem => {
     // A single-group forcing function keeps the answer a single number.
+    const resonant = variant === 'resonant' ? true : variant === 'plain' ? false : rng.bool(0.65)
     const roots = rng.bool(0.7) ? secondOrder(rng) : higherOrder(rng)
-    let g = makeForcing(rng, roots, undefined, rng.bool(0.65)).q
+    let g = makeForcing(rng, roots, undefined, resonant).q
     let groups = forcingGroups(g)
     let guard = 0
-    while (groups.length !== 1 && guard++ < 20) {
-      g = makeForcing(rng, roots, undefined, rng.bool(0.65)).q
+    while (guard++ < 25) {
+      const ok =
+        groups.length === 1 &&
+        (!variant || multiplicationShift(groups[0], roots) > 0 === (variant === 'resonant'))
+      if (ok) break
+      g = makeForcing(rng, roots, undefined, resonant).q
       groups = forcingGroups(g)
     }
     const s = multiplicationShift(groups[0], roots)
@@ -184,10 +238,11 @@ export const shiftChoice: GeneratorDef = {
       statementTex: odeTex(charPoly(roots), quasiTex(g)),
       givenLabel: 'Complementary function',
       givenTex: `y_c = ${generalSolutionTex(roots)}`,
-      answer: { kind: 'choice', ...shuffleWithAnswer(rng, correct, pool.slice(0, 3)) },
+      answer: choiceAnswer(rng, correct, pool.slice(0, 3)),
       hint: '$s$ is the multiplicity, as a root of the auxiliary equation, of the rate the forcing term is built on.',
       solution: shiftExplanation(g, roots),
       note: `$y_p = ${trialTex(g, roots)}$`,
+      derivation: () => deriveTrial(g, roots),
     }
   },
 }
@@ -218,6 +273,7 @@ export const annihilatorEntry: GeneratorDef = {
       hint: '$D^{n}$ kills $x^{n-1}$; $(D-\\alpha)^{n}$ kills $x^{n-1}e^{\\alpha x}$; $(D^2-2\\alpha D+\\alpha^2+\\beta^2)^{n}$ kills $x^{n-1}e^{\\alpha x}\\cos\\beta x$.',
       solution: `$${ann.tex}$`,
       note: `Order ${ann.order}. Typed form: \`${ann.text}\``,
+      derivation: () => deriveAnnihilator(q),
     }
   },
 }
@@ -235,49 +291,50 @@ export const annihilatorChoice: GeneratorDef = {
     const ann = annihilatorOf(q)
     const groups = forcingGroups(q)
 
-    const variants: string[] = []
-    // Exponent one too low, one too high.
-    for (const delta of [-1, 1]) {
-      const tex = groups
+    const byGroup = (map: (grp: (typeof groups)[number]) => number[], why: string): Distractor => ({
+      tex: groups
         .map((grp) => {
-          const f = annihilatorOf([term(1, Math.max(0, grp.degree + delta), grp.a, grp.b, 'cos')])
-          return f.tex
+          const [k, a, b] = map(grp)
+          return annihilatorOf([term(1, k, a, b, 'cos')]).tex
         })
-        .join('')
-      variants.push(tex)
-    }
-    // Sign of alpha flipped in every factor.
-    variants.push(
-      groups.map((grp) => annihilatorOf([term(1, grp.degree, -grp.a, grp.b, 'cos')]).tex).join(''),
-    )
-    // Factors added instead of multiplied.
+        .join(''),
+      why,
+    })
+
+    const variants: Distractor[] = [
+      byGroup(
+        (grp) => [Math.max(0, grp.degree - 1), grp.a, grp.b],
+        'The exponent is one too low, so one power of $x$ survives. A group whose highest power is $x^{k}$ needs its factor raised to $k+1$.',
+      ),
+      byGroup(
+        (grp) => [grp.degree + 1, grp.a, grp.b],
+        'That does annihilate $g(x)$, but not with the least order. Every extra power inflates the auxiliary equation and adds coefficients that come out zero.',
+      ),
+      byGroup(
+        (grp) => [grp.degree, -grp.a, grp.b],
+        'The sign of the exponential rate is flipped. $e^{\\alpha x}$ is killed by $(D - \\alpha)$, matching the root $m = \\alpha$ — the same sign convention as the auxiliary equation.',
+      ),
+      byGroup(
+        (grp) => [grp.degree, grp.b === 0 ? grp.a + 1 : grp.a, grp.b === 0 ? 0 : grp.b + 1],
+        'The rate or frequency does not match $g(x)$. Read $\\alpha$ and $\\beta$ straight off the exponential and the trig argument.',
+      ),
+      {
+        tex: ann.order > 1 ? `D^{${ann.order}}` : 'D',
+        why: 'A pure power of $D$ only annihilates polynomials. An exponential or a trig factor survives any number of plain derivatives.',
+      },
+    ]
     if (groups.length > 1) {
-      variants.push(groups.map((grp) => annihilatorOf([term(1, grp.degree, grp.a, grp.b, 'cos')]).tex).join(' + '))
+      variants.push({
+        tex: groups.map((grp) => annihilatorOf([term(1, grp.degree, grp.a, grp.b, 'cos')]).tex).join(' + '),
+        why: 'The factors are added rather than multiplied. Applying $L_1L_2$ kills both pieces; applying $L_1 + L_2$ kills neither.',
+      })
     }
-    // A pure power of D, which only works when g is a polynomial.
-    variants.push(ann.order > 1 ? `D^{${ann.order}}` : 'D')
-    variants.push(`D^{${ann.order + 1}}`)
-    // Exponent two too high, and the rate off by one.
-    variants.push(
-      groups
-        .map((grp) => annihilatorOf([term(1, grp.degree + 2, grp.a, grp.b, 'cos')]).tex)
-        .join(''),
-    )
-    variants.push(
-      groups
-        .map((grp) =>
-          annihilatorOf([
-            term(1, grp.degree, grp.b === 0 ? grp.a + 1 : grp.a, grp.b === 0 ? 0 : grp.b + 1, 'cos'),
-          ]).tex,
-        )
-        .join(''),
-    )
 
     const seen = new Set([ann.tex])
-    const wrong: string[] = []
+    const wrong: Distractor[] = []
     for (const v of rng.shuffle(variants)) {
-      if (seen.has(v)) continue
-      seen.add(v)
+      if (seen.has(v.tex)) continue
+      seen.add(v.tex)
       wrong.push(v)
       if (wrong.length >= 3) break
     }
@@ -287,9 +344,10 @@ export const annihilatorChoice: GeneratorDef = {
       topicId: 'annih',
       question: 'Which operator annihilates this function, with the lowest possible order?',
       statementTex: quasiTex(q),
-      answer: { kind: 'choice', ...mathChoice(rng, ann.tex, wrong) },
+      answer: choiceAnswer(rng, ann.tex, wrong, { math: true }),
       hint: 'One factor per group of $g$, with exponent one more than the highest power of $x$ in that group.',
       solution: `$${ann.tex}$, of order ${ann.order}.`,
+      derivation: () => deriveAnnihilator(q),
     }
   },
 }
@@ -303,7 +361,7 @@ export const annihilatorRoute: GeneratorDef = {
   topicId: 'annih',
   mode: 'choice',
   generate: (rng: RNG): Problem => {
-    const { roots, g } = setup(rng, 0.7)
+    const { roots, g } = setup(rng, undefined, 0.7)
     const ann = annihilatorOf(g)
     const target = trialTerms(g, roots)
     const correct = termsTrialTex(target)
@@ -315,12 +373,10 @@ export const annihilatorRoute: GeneratorDef = {
       statementTex: odeTex(charPoly(roots), quasiTex(g)),
       givenLabel: 'Annihilator of g(x)',
       givenTex: ann.tex,
-      answer: {
-        kind: 'choice',
-        ...mathChoice(rng, correct, wrongTrials(g, roots, target, rng)),
-      },
+      answer: choiceAnswer(rng, correct, wrongTrials(g, roots, target, rng), { math: true }),
       hint: 'The solutions already accounted for by $y_c$ are discarded; what remains is the trial form.',
       solution: `$y_c = ${generalSolutionTex(roots)}$ accounts for ${order(roots)} of the solutions; the remaining ones are $${correct}$.`,
+      derivation: () => deriveTrial(g, roots),
       note: 'The combined operator is the annihilator times the original one, so its roots are the union of the two root sets — with multiplicities added where they overlap. That overlap is exactly what §4.4 handles with $x^{s}$.',
     }
   },

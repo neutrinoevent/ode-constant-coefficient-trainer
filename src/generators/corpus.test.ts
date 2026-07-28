@@ -48,7 +48,38 @@ describe.each(GENERATORS.map((g) => [g.id, g] as const))('%s', (_id, gen) => {
         expect(correctIndex, `seed ${seed}`).toBeLessThan(options.length)
       }
     })
+
+    it('keeps each wrong-answer explanation beside its own option', () => {
+      for (let seed = 1; seed <= SEEDS; seed++) {
+        const p = gen.generate(makeRng(seed))
+        if (p.answer.kind !== 'choice' || !p.answer.explanations) continue
+        const { options, correctIndex, explanations } = p.answer
+        expect(explanations.length, `seed ${seed}`).toBe(options.length)
+        expect(explanations[correctIndex], `seed ${seed}: correct option carries a rebuttal`).toBe(
+          null,
+        )
+        for (const why of explanations) {
+          if (why !== null) expect(why.length, `seed ${seed}`).toBeGreaterThan(20)
+        }
+      }
+    })
   }
+
+  it('derives a worked example that matches the problem', () => {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const p = gen.generate(makeRng(seed))
+      if (!p.derivation) continue
+      const steps = p.derivation()
+      expect(steps.length, `seed ${seed}`).toBeGreaterThanOrEqual(4)
+      for (const s of steps) {
+        expect(s.label.length, `seed ${seed}: unlabelled step`).toBeGreaterThan(0)
+        expect(Boolean(s.tex || s.text), `seed ${seed}: empty step`).toBe(true)
+      }
+      // The first step restates the problem, the last states the answer.
+      expect(steps[0].tex, `seed ${seed}`).toBeTruthy()
+      expect(steps.at(-1)?.tex, `seed ${seed}`).toBeTruthy()
+    }
+  })
 
   if (gen.mode === 'entry') {
     it('accepts its own exemplar answer', () => {

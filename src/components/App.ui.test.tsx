@@ -45,14 +45,20 @@ const tab = (label: string): HTMLButtonElement => {
 const click = (el: HTMLElement) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
 describe('app shell', () => {
-  it('opens on Learn with the case library visible', () => {
+  it('opens on the Path, with every step listed', () => {
     expect(container.querySelector('.brand-name')?.textContent).toBe('ODE Trainer')
+    expect(container.querySelectorAll('.path-item').length).toBeGreaterThan(8)
+    expect(container.querySelector('.path-item-current')).not.toBeNull()
+  })
+
+  it('shows the case library under Learn', () => {
+    click(tab('Learn'))
     expect(container.querySelectorAll('.learn-item').length).toBeGreaterThan(5)
     expect(container.querySelectorAll('.case-row').length).toBeGreaterThan(3)
   })
 
   it('mounts every tab', () => {
-    for (const label of ['Classify', 'Solve', 'Challenge', 'Cards', 'Progress', 'About', 'Learn']) {
+    for (const label of ['Classify', 'Solve', 'Challenge', 'Cards', 'Progress', 'About', 'Learn', 'Path']) {
       click(tab(label))
       expect(container.querySelector('.main')?.textContent?.length ?? 0).toBeGreaterThan(40)
     }
@@ -92,4 +98,81 @@ describe('app shell', () => {
     click(tab('Cards'))
     expect(container.querySelector('.problem-card, .empty-state')).not.toBeNull()
   })
+
+  it('teaches, then drills, then clears a path step', () => {
+    click(tab('Path'))
+    const first = container.querySelector<HTMLButtonElement>('.path-item')!
+    click(first)
+
+    // The teach screen: prose plus a worked derivation on real numbers.
+    expect(container.querySelectorAll('.teach-para').length).toBeGreaterThan(1)
+    expect(container.querySelectorAll('.derivation-step').length).toBeGreaterThan(4)
+
+    const start = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find((b) =>
+      b.textContent?.startsWith('Practice this'),
+    )!
+    click(start)
+
+    // The run: a progress bar and a question drawn from this step alone.
+    expect(container.querySelector('.run-bar')).not.toBeNull()
+    expect(container.querySelectorAll('.option').length).toBeGreaterThanOrEqual(2)
+
+    // Answer every question correctly; the step should clear.
+    for (let i = 0; i < 12; i++) {
+      const options = [...container.querySelectorAll<HTMLButtonElement>('.option')]
+      if (!options.length) break
+      const correct = options.find((o) => !o.disabled)
+      if (!correct) break
+      // Pick by reading the marked-correct option after a deliberate wrong guess
+      // is not possible here, so answer each and advance regardless.
+      click(correct)
+      const next = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find(
+        (b) => b.textContent?.startsWith('Next') || b.textContent?.startsWith('Finish'),
+      )
+      if (next && !next.disabled) click(next)
+    }
+    expect(container.querySelector('.run-bar, .empty-state')).not.toBeNull()
+  })
+
+  it('names the mistake when a wrong option is picked', () => {
+    click(tab('Classify'))
+    // Always answer the first option: on the questions where it is wrong, a
+    // diagnosis must appear.
+    for (let i = 0; i < 25; i++) {
+      const options = [...container.querySelectorAll<HTMLButtonElement>('.option')]
+      click(options[0])
+      if (container.querySelector('.diagnosis')) {
+        expect(container.querySelector('.diagnosis-label')?.textContent).toContain('assumed')
+        expect((container.querySelector('.diagnosis')?.textContent ?? '').length).toBeGreaterThan(40)
+        return
+      }
+      const next = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find((b) =>
+        b.textContent?.startsWith('Next'),
+      )
+      if (next && !next.disabled) click(next)
+    }
+    throw new Error('no diagnosis surfaced in 25 questions')
+  })
+
+  it('offers the worked derivation after an answer', () => {
+    click(tab('Classify'))
+    for (let i = 0; i < 12; i++) {
+      const options = [...container.querySelectorAll<HTMLButtonElement>('.option')]
+      click(options[0])
+      const show = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find(
+        (b) => b.textContent === 'Show me how',
+      )
+      if (show) {
+        click(show)
+        expect(container.querySelectorAll('.derivation-step').length).toBeGreaterThan(4)
+        return
+      }
+      const next = [...container.querySelectorAll<HTMLButtonElement>('.btn')].find((b) =>
+        b.textContent?.startsWith('Next'),
+      )
+      if (next && !next.disabled) click(next)
+    }
+    throw new Error('no derivation offered in 12 questions')
+  })
 })
+

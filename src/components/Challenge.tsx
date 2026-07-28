@@ -7,7 +7,9 @@ import { randomRng } from '../lib/rng'
 import { shuffle } from '../lib/pick'
 import { TIER_LABEL, tierFor } from '../lib/mastery'
 import { statsFor, type ProgressState } from '../store/progress'
+import { deriveHomogeneous } from '../lib/derive'
 import { Rich, Tex } from './Tex'
+import { DerivationToggle } from './Derivation'
 import { RootPlane } from './RootPlane'
 
 interface ChallengeProps {
@@ -56,14 +58,23 @@ interface PlaneQuestion {
   roots: RootSet
   options: string[]
   correctIndex: number
+  explanations: (string | null)[]
 }
 
 function makePlaneQuestion(): PlaneQuestion {
   const rng = randomRng()
   const roots = rng.bool(0.45) ? secondOrder(rng) : higherOrder(rng)
   const correct = generalSolutionTex(roots)
-  const shuffled = rng.shuffle([correct, ...wrongSolutions(roots, rng, 3)])
-  return { roots, options: shuffled, correctIndex: shuffled.indexOf(correct) }
+  const entries = rng.shuffle([
+    { tex: correct, why: null as string | null },
+    ...wrongSolutions(roots, rng, 3),
+  ])
+  return {
+    roots,
+    options: entries.map((e) => e.tex),
+    correctIndex: entries.findIndex((e) => e.tex === correct),
+    explanations: entries.map((e) => e.why),
+  }
 }
 
 function PlaneRound({ onAnswer }: { onAnswer: (id: string, correct: boolean) => void }) {
@@ -136,10 +147,17 @@ function PlaneRound({ onAnswer }: { onAnswer: (id: string, correct: boolean) => 
           >
             {picked === q.correctIndex ? 'Correct' : 'Not that one'}
           </div>
+          {picked !== q.correctIndex && q.explanations[picked] ? (
+            <div className="diagnosis">
+              <span className="diagnosis-label">What that answer assumed</span>
+              <Rich text={q.explanations[picked]} />
+            </div>
+          ) : null}
           <div className="solution">
             <span className="solution-label">Roots</span>
             <Tex tex={rootsTex(q.roots)} /> — {CASE_LABEL[caseId].toLowerCase()}, order {order(q.roots)}.
           </div>
+          <DerivationToggle steps={deriveHomogeneous(q.roots)} />
         </>
       ) : null}
 
